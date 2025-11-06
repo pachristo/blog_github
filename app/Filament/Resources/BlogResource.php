@@ -15,6 +15,9 @@ use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Illuminate\Support\Str;
 use Mohamedsabil83\FilamentFormsTinyeditor\Components\TinyEditor;
 use Filament\Forms\Components\Wizard;
+use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
+use Intervention\Image\Facades\Image;
+use Illuminate\Support\Facades\Storage;
 
 class BlogResource extends Resource
 {
@@ -48,7 +51,77 @@ class BlogResource extends Resource
 
                                 TinyEditor::make('content')
                                     ->label('Blog Content')
-                                    ->columnSpanFull(),
+                                    ->columnSpanFull()
+                                    ->configure([
+                                        'plugins' => 'autolink link image lists advlist fullscreen media table paste',
+                                        'toolbar' => 'undo redo | formatselect | bold italic | alignleft aligncenter alignright | bullist numlist outdent indent | link image media | fullscreen',
+                                        'paste_data_images' => true,
+                                        'images_upload_handler' => '((blobInfo, progress) => new Promise((resolve, reject) => {
+                                            const file = blobInfo.blob();
+
+                                            const uploadFile = (fileToUpload, fileName) => {
+                                                const xhr = new XMLHttpRequest();
+                                                xhr.open("POST", "/tiny-editor/upload");
+                                                xhr.setRequestHeader("X-CSRF-TOKEN", document.querySelector(`meta[name="csrf-token"]`).content);
+
+                                                xhr.upload.onprogress = (e) => {
+                                                    progress(e.loaded / e.total * 100);
+                                                };
+
+                                                xhr.onload = () => {
+                                                    if (xhr.status < 200 || xhr.status >= 300) {
+                                                        return reject("HTTP Error: " + xhr.status);
+                                                    }
+                                                    const json = JSON.parse(xhr.responseText);
+                                                    if (!json || typeof json.location != "string") {
+                                                        return reject("Invalid JSON: " + xhr.responseText);
+                                                    }
+                                                    resolve(json.location);
+                                                };
+
+                                                xhr.onerror = () => {
+                                                    reject("Image upload failed due to a network error.");
+                                                };
+
+                                                const formData = new FormData();
+                                                formData.append("file", fileToUpload, fileName);
+                                                xhr.send(formData);
+                                            };
+
+                                            if (file.type.startsWith("image/") && file.size > 700 * 1024) {
+                                                const reader = new FileReader();
+                                                reader.onload = function(e) {
+                                                    const img = new Image();
+                                                    img.onload = function() {
+                                                        const canvas = document.createElement("canvas");
+                                                        const ctx = canvas.getContext("2d");
+                                                        const maxWidth = 1200;
+                                                        const quality = 0.60;
+
+                                                        let width = img.width;
+                                                        let height = img.height;
+
+                                                        if (width > maxWidth) {
+                                                            height *= maxWidth / width;
+                                                            width = maxWidth;
+                                                        }
+
+                                                        canvas.width = width;
+                                                        canvas.height = height;
+                                                        ctx.drawImage(img, 0, 0, width, height);
+
+                                                        canvas.toBlob(function(resizedBlob) {
+                                                            uploadFile(resizedBlob, blobInfo.filename());
+                                                        }, "image/jpeg", quality);
+                                                    };
+                                                    img.src = e.target.result;
+                                                };
+                                                reader.readAsDataURL(file);
+                                            } else {
+                                                uploadFile(file, blobInfo.filename());
+                                            }
+                                        }))',
+                                    ]),
                             ])->columns(columns: 1),
 
 
@@ -63,10 +136,32 @@ class BlogResource extends Resource
                                     ->image()
                                     ->directory('blog-images')
                                     ->maxSize(10240) // 10MB
-                                    ->imageResizeMode('cover')
-                                    ->imageCropAspectRatio('16:9')
-                                    ->imageResizeTargetWidth('1200')
-                                    ->imageResizeTargetHeight('675'),
+                                    ->saveUploadedFileUsing(function (TemporaryUploadedFile $file, $get) {
+                                        // Define the target path
+                                        $fileName = $file->hashName();
+                                        $directory = 'blog-images';
+                                        $path = $directory . '/' . $fileName;
+
+                                        // Check file size (700KB = 700 * 1024 bytes)
+                                        if ($file->getSize() > 700 * 1024) {
+                                            // If > 700KB, resize and compress
+                                            $image = Image::make($file->getRealPath())
+                                                ->resize(1200, 675, function ($constraint) {
+                                                    $constraint->aspectRatio();
+                                                    $constraint->upsize();
+                                                })
+                                                ->quality(60);
+
+                                            // Save the processed image to the final destination
+                                            Storage::disk('public')->put($path, (string) $image->encode());
+                                        } else {
+                                            // If <= 700KB, just store the original file
+                                            $file->storeAs($directory, $fileName, 'public');
+                                        }
+
+                                        // Return the path to be saved in the database
+                                        return $path;
+                                    }),
 
                                 Forms\Components\Select::make('status')
                                     ->options([
