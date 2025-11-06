@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Illuminate\Support\Str;
 use Mohamedsabil83\FilamentFormsTinyeditor\Components\TinyEditor;
+use Filament\Forms\Components\Wizard;
 
 class BlogResource extends Resource
 {
@@ -26,101 +27,109 @@ class BlogResource extends Resource
     {
         return $form
             ->schema([
-                Forms\Components\Section::make('Blog Content')
+                Forms\Components\Group::make()
                     ->schema([
-                        Forms\Components\TextInput::make('title')
-                            ->required()
-                            ->maxLength(255)
-                            ->live(onBlur: true) // Updates only when user leaves the field
-                            ->afterStateUpdated(function (\Filament\Forms\Set $set, ?string $state) {
-                                if (filled($state)) {
-                                    $set('slug', \Str::slug($state));
-                                }
-                            }),
+                        Forms\Components\Section::make('Content')
+                            ->schema([
+                                Forms\Components\TextInput::make('title')
+                                    ->required()
+                                    ->maxLength(255)
+                                    ->live(onBlur: true)
+                                    ->afterStateUpdated(function (\Filament\Forms\Set $set, ?string $state) {
+                                        if (filled($state)) {
+                                            $set('slug', \Str::slug($state));
+                                        }
+                                    }),
 
-                        Forms\Components\TextInput::make('slug')
-                            ->required()
-                            ->maxLength(255)
-                            ->unique(ignoreRecord: true),
+                                Forms\Components\TextInput::make('slug')
+                                    ->required()
+                                    ->maxLength(255)
+                                    ->unique(ignoreRecord: true), // Fix for the unique slug issue on edit
 
-                        Forms\Components\Select::make('creator')
-                            ->relationship('user', 'name')
-                            ->required()
-                            ->default(auth()->id()),
+                                TinyEditor::make('content')
+                                    ->label('Blog Content')
+                                    ->columnSpanFull(),
+                            ])->columns(columns: 1),
 
-                        Forms\Components\Select::make('category')
-                            ->options([
-                                'Sport News' => 'Sport News',
-                                'esports news' => 'esports news',
-                                'Preview' => 'Preview',
-                                'Updates' => 'Updates',
-                            ])
-                            ->required()
-                            ->default('Sport News'),
 
-                        Forms\Components\Select::make('lang')
-                            ->label('Language')
-                            ->options([
-                                'en' => 'English', 'fr' => 'French', 'es' => 'Spanish', 'de' => 'German',
-                                'it' => 'Italian', 'pt' => 'Portuguese', 'ru' => 'Russian', 'ar' => 'Arabic',
-                                'zh' => 'Chinese', 'ja' => 'Japanese', 'ko' => 'Korean', 'hi' => 'Hindi',
-                                'bn' => 'Bengali', 'ur' => 'Urdu', 'tr' => 'Turkish', 'fa' => 'Persian',
-                                'nl' => 'Dutch', 'sv' => 'Swedish', 'pl' => 'Polish', 'uk' => 'Ukrainian',
-                                'ro' => 'Romanian', 'cs' => 'Czech', 'el' => 'Greek', 'he' => 'Hebrew',
-                                'th' => 'Thai', 'vi' => 'Vietnamese', 'id' => 'Indonesian', 'ms' => 'Malay',
-                                'ta' => 'Tamil', 'te' => 'Telugu', 'mr' => 'Marathi', 'gu' => 'Gujarati',
-                                'kn' => 'Kannada', 'ml' => 'Malayalam', 'pa' => 'Punjabi', 'sr' => 'Serbian',
-                                'no' => 'Norwegian', 'da' => 'Danish', 'fi' => 'Finnish', 'hu' => 'Hungarian',
-                                'sk' => 'Slovak', 'sl' => 'Slovenian', 'bg' => 'Bulgarian', 'hr' => 'Croatian',
-                                'lt' => 'Lithuanian', 'lv' => 'Latvian', 'et' => 'Estonian', 'is' => 'Icelandic',
-                                'ga' => 'Irish', 'mt' => 'Maltese', 'sw' => 'Swahili', 'zu' => 'Zulu',
-                                'xh' => 'Xhosa', 'af' => 'Afrikaans',
-                            ])
-                            ->required()
-                            ->default('en'),
-
-                        TinyEditor::make('content')
-                            ->label('Footer Content')
-                            // Manually apply wire:model.lazy → only syncs on blur
-                            ,
-
-                        Forms\Components\FileUpload::make('display_image')
-                            ->image()
-                            ->directory('blog-images')
-                            ->maxSize(5120) // 5MB (increased safely)
-                            ->imageResizeMode('cover')
-                            ->imageCropAspectRatio('16:9')
-                            ->imageResizeTargetWidth('800')
-                            ->imageResizeTargetHeight('450')
-                            ->lazy(), // Sync reference only on blur
                     ])
-                    ->columns(1),
+                    ->columnSpan(['lg' => 2]),
 
-                Forms\Components\Section::make('Publishing')
+                Forms\Components\Group::make()
                     ->schema([
-                        Forms\Components\Select::make('status')
-                            ->options([
-                                'Draft' => 'Draft',
-                                'Publish' => 'Published',
-                                'Archived' => 'Archived',
-                            ])
-                            ->required()
-                            ->default('draft'),
-                    ])
-                    ->columns(1),
+                        Forms\Components\Section::make('Image & Status')
+                            ->schema([
+                                Forms\Components\FileUpload::make('display_image')
+                                    ->image()
+                                    ->directory('blog-images')
+                                    ->maxSize(10240) // 10MB
+                                    ->imageResizeMode('cover')
+                                    ->imageCropAspectRatio('16:9')
+                                    ->imageResizeTargetWidth('1200')
+                                    ->imageResizeTargetHeight('675'),
 
-                Forms\Components\Section::make('SEO')
-                    ->schema([
-                        Forms\Components\Textarea::make('meta_keywords')
-                            ->maxLength(500)
-                            ->rows(3),
+                                Forms\Components\Select::make('status')
+                                    ->options([
+                                        'Draft' => 'Draft',
+                                        'Publish' => 'Published',
+                                        'Archived' => 'Archived',
+                                    ])
+                                    ->required()
+                                    ->default('Draft'),
+                            ]),
 
-                        Forms\Components\Textarea::make('meta_description')
-                            ->maxLength(300)
-                            ->rows(3),
+                        Forms\Components\Section::make('Associations')
+                            ->schema([
+                                Forms\Components\Select::make('creator')
+                                    ->relationship('user', 'name')
+                                    ->required()
+                                    ->default(auth()->id()),
+
+                                Forms\Components\Select::make('category')
+                                    ->options([
+                                        'Sport News' => 'Sport News',
+                                        'esports news' => 'esports news',
+                                        'Preview' => 'Preview',
+                                        'Updates' => 'Updates',
+                                    ])
+                                    ->required()
+                                    ->default('Sport News'),
+
+                                Forms\Components\Select::make('lang')
+                                    ->label('Language')
+                                    ->options([
+                                        'en' => 'English', 'fr' => 'French', 'es' => 'Spanish', 'de' => 'German',
+                                        'it' => 'Italian', 'pt' => 'Portuguese', 'ru' => 'Russian', 'ar' => 'Arabic',
+                                        'zh' => 'Chinese', 'ja' => 'Japanese', 'ko' => 'Korean', 'hi' => 'Hindi',
+                                        'bn' => 'Bengali', 'ur' => 'Urdu', 'tr' => 'Turkish', 'fa' => 'Persian',
+                                        'nl' => 'Dutch', 'sv' => 'Swedish', 'pl' => 'Polish', 'uk' => 'Ukrainian',
+                                        'ro' => 'Romanian', 'cs' => 'Czech', 'el' => 'Greek', 'he' => 'Hebrew',
+                                        'th' => 'Thai', 'vi' => 'Vietnamese', 'id' => 'Indonesian', 'ms' => 'Malay',
+                                        'ta' => 'Tamil', 'te' => 'Telugu', 'mr' => 'Marathi', 'gu' => 'Gujarati',
+                                        'kn' => 'Kannada', 'ml' => 'Malayalam', 'pa' => 'Punjabi', 'sr' => 'Serbian',
+                                        'no' => 'Norwegian', 'da' => 'Danish', 'fi' => 'Finnish', 'hu' => 'Hungarian',
+                                        'sk' => 'Slovak', 'sl' => 'Slovenian', 'bg' => 'Bulgarian', 'hr' => 'Croatian',
+                                        'lt' => 'Lithuanian', 'lv' => 'Latvian', 'et' => 'Estonian', 'is' => 'Icelandic',
+                                        'ga' => 'Irish', 'mt' => 'Maltese', 'sw' => 'Swahili', 'zu' => 'Zulu',
+                                        'xh' => 'Xhosa', 'af' => 'Afrikaans',
+                                    ])
+                                    ->required()
+                                    ->default('en'),
+                            ]),
+                                 Forms\Components\Section::make('SEO')
+                            ->schema([
+                                Forms\Components\Textarea::make('meta_keywords')
+                                    ->maxLength(500)
+                                    ->rows(3),
+
+                                Forms\Components\Textarea::make('meta_description')
+                                    ->maxLength(300)
+                                    ->rows(3),
+                            ]),
                     ])
-                    ->columns(1),
-            ]);
+                    ->columnSpan(['lg' => 1]),
+            ])
+            ->columns(3);
     }
 
     public static function table(Table $table): Table
